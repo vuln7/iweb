@@ -1,0 +1,19 @@
+# docker compose up -d   →   iweb at http://localhost:3000
+# Keys and settings come from .env (copy .env.example); your data lives in the iweb-data volume.
+services:
+  iweb:
+    build: .
+    image: iweb
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - iweb-data:/data
+
+volumes:
+  iweb-data:

@@ -1,0 +1,30 @@
+# Render Blueprint: "Deploy to Render" in the README creates this service from the repo.
+# A persistent disk keeps your settings and sign-ins across deploys; disks need a paid instance.
+services:
+  - type: web
+    name: iweb
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    disk:
+      name: iweb-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      # Render asks for these when you create the service.
+      - key: IWEB_PASSWORD
+        sync: false
+      - key: BASE_URL
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: REDDIT_CLIENT_ID
+        sync: false
+      - key: REDDIT_CLIENT_SECRET
+        sync: false

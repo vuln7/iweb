@@ -84,6 +84,7 @@ const ext = (href, props, ...kids) => h('a', { href: isHttp(href) ? href : '#', 
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, { method, headers: body ? { 'content-type': 'application/json' } : {}, body: body && JSON.stringify(body) });
+  if (res.status === 401) location.assign(`/login?next=${encodeURIComponent(location.pathname + location.search)}`); // a password-locked install
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -107,7 +108,30 @@ function toast(msg, action) {
   toastTimer = setTimeout(() => el.classList.remove('show'), action ? 6000 : 2600);
 }
 
-const send = (it, action) => api('/api/feedback', { method: 'POST', body: { id: it.id, action } }).catch(e => toast(e.message));
+// ---------- demo: a public install where each visitor's choices live in their own browser ----------
+const local = {
+  read: (k, fallback) => { try { return JSON.parse(store.get(k)) ?? fallback; } catch { return fallback; } },
+  write: (k, v) => store.set(k, JSON.stringify(v)),
+};
+const demoSaved = () => local.read('iweb.demo.saved', []);
+const demoHidden = () => new Set(local.read('iweb.demo.hidden', []));
+
+function demoFeedback(it, action) {
+  if (action === 'like' || action === 'unlike') {
+    const { score, why, liked, hidden, ...snapshot } = it;
+    const rest = demoSaved().filter(s => s.id !== it.id);
+    local.write('iweb.demo.saved', action === 'like' ? [{ ...snapshot, savedAt: Date.now() }, ...rest].slice(0, 300) : rest);
+  }
+  if (action === 'hide' || action === 'unhide') {
+    const ids = demoHidden();
+    if (action === 'hide') ids.add(it.id); else ids.delete(it.id);
+    local.write('iweb.demo.hidden', [...ids].slice(-3000));
+  }
+}
+
+const send = (it, action) => (state.demo
+  ? demoFeedback(it, action)
+  : api('/api/feedback', { method: 'POST', body: { id: it.id, action } }).catch(e => toast(e.message)));
 const metaOf = it => state.metaById[it.source] || { label: it.source, color: '#949494' };
 
 // ---------- data ----------
@@ -117,7 +141,17 @@ async function loadFeed(refresh = false) {
   $('#grid').setAttribute('aria-busy', 'true');
   if (!state.feed) renderSkeleton();
   try {
-    state.feed = await api(`/api/feed${refresh ? '?refresh=1' : ''}`);
+    if (state.demo) {
+      // The demo ranks one shared pool by this visitor's own topics, then applies their saves and hides here.
+      const q = new URLSearchParams({ interests: state.profile.interests.map(i => i.term).join(','), freshness: state.profile.freshnessHours });
+      const feed = await api(`/api/feed?${q}`);
+      const saved = new Set(demoSaved().map(s => s.id));
+      const hidden = demoHidden();
+      feed.items = feed.items.filter(it => !hidden.has(it.id)).map(it => ({ ...it, liked: saved.has(it.id) }));
+      state.feed = feed;
+    } else {
+      state.feed = await api(`/api/feed${refresh ? '?refresh=1' : ''}`);
+    }
     cards.clear();
     await refreshAccounts().catch(() => {});
   } catch (e) {
@@ -136,7 +170,7 @@ async function loadFeed(refresh = false) {
 
 async function loadSaved() {
   try {
-    state.saved = (await api('/api/saved')).items;
+    state.saved = state.demo ? demoSaved().map(s => ({ ...s, liked: true })) : (await api('/api/saved')).items;
   } catch (e) {
     toast(`Couldn’t load saved posts: ${e.message}`);
   }
@@ -174,6 +208,7 @@ function sourceRows() {
     if (!s || s.status === 'off') return [];
     const count = items.filter(i => i.source === c.id).length;
     const needs = s.status === 'setup' || (s.status === 'error' && !count);
+    if (needs && state.demo) return []; // a demo visitor can't fix setup, so don't offer it
     return [{ c, s, count, needs }];
   });
 }
@@ -219,7 +254,7 @@ function renderTitle() {
   }
   $('#stamp').textContent = `Updated ${clock(f.generatedAt)}`;
   if (state.tab === 'saved') {
-    finding.textContent = `${state.saved.length} saved ${state.saved.length === 1 ? 'post' : 'posts'}. Saving teaches your feed what to show more of.`;
+    finding.textContent = `${state.saved.length} saved ${state.saved.length === 1 ? 'post' : 'posts'}. ${state.demo ? 'They’re kept in this browser.' : 'Saving teaches your feed what to show more of.'}`;
     return;
   }
   const items = f.items;
@@ -235,6 +270,17 @@ function renderTitle() {
 
 function renderNotice() {
   const slot = $('#notice');
+  if (state.demo) {
+    if (state.tab !== 'all' || store.get('iweb.demo-notice.dismissed')) return slot.replaceChildren();
+    const el = h('section', { class: 'notice', 'aria-label': 'About this demo' },
+      h('div', { class: 'notice-text' },
+        h('strong', {}, 'You’re trying the iweb demo'),
+        h('span', {}, 'Your topics, saves and hides stay in this browser. Run your own copy to bring in your YouTube, Reddit and Bluesky.')),
+      h('div', { class: 'notice-actions' },
+        ext(state.sourceUrl, { class: 'pill small' }, 'Get iweb', icon('arrow')),
+        h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Dismiss', onclick: () => { store.set('iweb.demo-notice.dismissed', '1'); el.remove(); } }, icon('close'))));
+    return slot.replaceChildren(el);
+  }
   const open = state.accounts.filter(a => !a.connected);
   if (state.tab !== 'all' || store.get('iweb.notice.dismissed') || !open.length || state.accounts.some(a => a.connected)) return slot.replaceChildren();
   const el = h('section', { class: 'notice', 'aria-label': 'Connect accounts' },
@@ -249,8 +295,13 @@ function renderNotice() {
 
 function renderSideFoot() {
   const connected = state.accounts.filter(a => a.connected);
+  const tune = h('button', { type: 'button', class: 'nav-item', onclick: () => openSettings() }, icon('sliders'), h('span', {}, 'Tune feed'));
+  if (state.demo) {
+    return $('#side-foot').replaceChildren(tune,
+      ext(state.sourceUrl, { class: 'nav-item me' }, icon('layers'), h('span', {}, h('strong', {}, 'Run your own iweb'), 'Free and open source')));
+  }
   $('#side-foot').replaceChildren(
-    h('button', { type: 'button', class: 'nav-item', onclick: () => openSettings() }, icon('sliders'), h('span', {}, 'Tune feed')),
+    tune,
     h('button', { type: 'button', class: 'nav-item me', onclick: () => openSettings('accounts') },
       connected.length
         ? h('span', { class: 'avatar-stack' }, connected.map(a => h('span', { style: `--src:${state.metaById[a.id]?.color || '#888'}` }, a.label[0])))
@@ -1110,7 +1161,7 @@ let draft = null;
 
 async function openSettings(focus) {
   // Pick up what feedback has taught it, and any sign-in a feed refresh found broken.
-  [state.profile] = await Promise.all([api('/api/profile').catch(() => state.profile), refreshAccounts().catch(() => {})]);
+  if (!state.demo) [state.profile] = await Promise.all([api('/api/profile').catch(() => state.profile), refreshAccounts().catch(() => {})]);
   draft = structuredClone(state.profile);
   renderSettings();
   $('#settings').showModal();
@@ -1254,7 +1305,39 @@ function sourceEditor(c) {
   return box;
 }
 
+// AGPL: every install tells its users where its source code is.
+const legal = () => h('p', { class: 'legal' }, 'iweb is free software under the GNU AGPL-3.0. ', ext(state.sourceUrl, {}, 'Source code'));
+
+function renderDemoSettings() {
+  const saved = demoSaved().length;
+  const hidden = demoHidden().size;
+  $('#settings-body').replaceChildren(
+    h('section', { class: 'group' },
+      h('h3', {}, 'What are you into?'),
+      h('p', {}, 'Posts that mention these rank higher. Your topics stay in this browser.'),
+      interestsEditor()),
+    h('section', { class: 'group' },
+      h('h3', {}, 'Freshness'),
+      h('p', {}, 'How quickly older posts fade out of your feed.'),
+      h('input', { type: 'range', min: 6, max: 168, step: 6, value: draft.freshnessHours, 'aria-label': 'Freshness', oninput: e => (draft.freshnessHours = Number(e.target.value)) }),
+      h('div', { class: 'range-labels' }, h('span', {}, 'Only the latest'), h('span', {}, 'Keep older posts'))),
+    h('section', { class: 'group' },
+      h('h3', {}, 'Saved and hidden'),
+      h('p', {}, `${saved} saved and ${hidden} hidden ${saved + hidden === 1 ? 'post' : 'posts'}, kept in this browser only.`),
+      hidden > 0 && h('button', {
+        type: 'button',
+        class: 'pill small',
+        onclick: () => { local.write('iweb.demo.hidden', []); renderDemoSettings(); toast('Hidden posts will show again.'); },
+      }, 'Show hidden posts again')),
+    h('section', { class: 'group' },
+      h('h3', {}, 'Your own accounts and sources'),
+      h('p', {}, 'This demo reads a fixed set of public sources. Run your own copy of iweb to sign in with YouTube and Reddit, import who you follow on Bluesky, and add any subreddit, channel or RSS feed. It runs on your computer or a small server, and nothing leaves it.'),
+      ext(state.sourceUrl, { class: 'pill small' }, 'Get iweb on GitHub', icon('arrow'))),
+    legal());
+}
+
 function renderSettings() {
+  if (state.demo) return renderDemoSettings();
   const learned = state.profile.learned;
   $('#settings-body').replaceChildren(
     h('section', { class: 'group', id: 'accounts' },
@@ -1287,14 +1370,20 @@ function renderSettings() {
         },
       }, 'Reset what it learned')),
     h('h3', { class: 'group-title' }, 'Sources'),
-    ...state.meta.map(c => sourceEditor(c)));
+    ...state.meta.map(c => sourceEditor(c)),
+    legal());
 }
 
 async function saveSettings() {
   const btn = $('#save-settings');
   btn.disabled = true;
   try {
-    state.profile = await api('/api/profile', { method: 'PUT', body: { interests: draft.interests, freshnessHours: draft.freshnessHours, sources: draft.sources } });
+    if (state.demo) {
+      local.write('iweb.demo.prefs', { interests: draft.interests, freshnessHours: draft.freshnessHours });
+      state.profile = { ...state.profile, interests: draft.interests, freshnessHours: draft.freshnessHours };
+    } else {
+      state.profile = await api('/api/profile', { method: 'PUT', body: { interests: draft.interests, freshnessHours: draft.freshnessHours, sources: draft.sources } });
+    }
     $('#settings').close();
     toast('Rebuilding your feed…');
     await loadFeed();
@@ -1377,7 +1466,9 @@ async function init() {
   const [meta, profile, accounts] = await Promise.all([api('/api/meta'), api('/api/profile'), api('/api/accounts')]);
   state.meta = meta.connectors;
   state.metaById = Object.fromEntries(meta.connectors.map(c => [c.id, c]));
-  state.profile = profile;
+  state.demo = meta.demo;
+  state.sourceUrl = meta.sourceUrl;
+  state.profile = state.demo ? { ...profile, ...local.read('iweb.demo.prefs', {}) } : profile;
   state.accounts = accounts.accounts;
   state.loading = true;
   renderChrome();

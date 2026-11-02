@@ -4,9 +4,13 @@
   "description": "Your personal internet: one feed built from the accounts and sources you follow.",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=20" },
+  "license": "AGPL-3.0-or-later",
+  "repository": { "type": "git", "url": "https://github.com/4040chan/mewsnewws.git" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "demo": "node server.js --demo",
+    "test": "node --test"
   }
 }

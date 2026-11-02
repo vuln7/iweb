@@ -21,7 +21,7 @@ export default {
   async fetch(cfg, { force }) {
     return gather(cfg.feeds, async url => {
       if (!safeUrl(url)) throw new Error('not an http(s) URL');
-      const feed = parseFeed(await getText(url, { force, headers: { accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' } }));
+      const feed = parseFeed(await getText(url, { force, untrusted: true, headers: { accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' } }));
       const site = domainOf(url);
       return feed.items.slice(0, 25).map(e => {
         const link = safeUrl(e.link) || url;
