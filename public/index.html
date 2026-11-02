@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>iweb — your personal internet</title>
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23000'/%3E%3Crect x='6' y='6' width='9' height='12' rx='3' fill='%23fff'/%3E%3Crect x='17' y='6' width='9' height='7' rx='3' fill='%234C86FF'/%3E%3Crect x='6' y='20' width='9' height='6' rx='3' fill='%23fff' opacity='.55'/%3E%3Crect x='17' y='15' width='9' height='11' rx='3' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#grid">Skip to feed</a>
+
+  <div class="shell">
+    <aside class="side" aria-label="Navigation">
+      <a class="brand" href="/" aria-label="iweb, home">
+        <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="wordmark">iweb</span>
+      </a>
+      <nav class="nav" id="views" aria-label="Views"></nav>
+      <p class="group-label" id="sources-label">Sources</p>
+      <nav class="nav sources" id="sources" aria-labelledby="sources-label"></nav>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+
+    <header class="top" id="top">
+      <a class="brand brand-compact" href="/" aria-label="iweb, home">
+        <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="wordmark">iweb</span>
+      </a>
+      <label class="search">
+        <span class="search-icon" id="search-icon" aria-hidden="true"></span>
+        <input id="find" type="search" placeholder="Search your feed" autocomplete="off" spellcheck="false" aria-label="Search your feed">
+        <kbd aria-hidden="true">/</kbd>
+      </label>
+      <div class="top-actions">
+        <button id="refresh" class="icon-btn" type="button" aria-label="Refresh feed" title="Refresh"></button>
+        <button id="open-settings" class="pill primary" type="button">Tune feed</button>
+      </div>
+    </header>
+
+    <main class="canvas" id="canvas">
+      <div class="title-row">
+        <div class="title-text">
+          <h1 id="title">For you</h1>
+          <p class="finding" id="finding"></p>
+        </div>
+        <span class="stamp" id="stamp"></span>
+      </div>
+      <nav class="chips" id="chips" aria-label="Filter by source"></nav>
+      <div id="notice"></div>
+      <div id="grid" class="grid" tabindex="-1" aria-live="polite" aria-busy="true"></div>
+      <div id="reels" class="reels" tabindex="-1" aria-label="Watch"></div>
+      <div class="reels-nav" id="reels-nav"></div>
+      <div id="sentinel" aria-hidden="true"></div>
+      <p id="end" class="end"></p>
+    </main>
+  </div>
+
+  <nav class="tabbar" id="tabbar" aria-label="Views"></nav>
+
+  <dialog id="plate" class="plate" aria-label="Post"></dialog>
+
+  <dialog id="settings" class="sheet" aria-labelledby="settings-title">
+    <form method="dialog" class="sheet-head">
+      <h2 id="settings-title">Tune your feed</h2>
+      <button class="icon-btn" value="cancel" aria-label="Close settings" id="close-settings"></button>
+    </form>
+    <div id="settings-body" class="sheet-body"></div>
+    <div class="sheet-foot">
+      <button type="button" class="pill ghost" id="cancel-settings">Cancel</button>
+      <button type="button" class="pill primary" id="save-settings">Save and rebuild</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

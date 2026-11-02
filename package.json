@@ -1,0 +1,12 @@
+{
+  "name": "iweb",
+  "version": "0.1.0",
+  "description": "Your personal internet: one feed built from the accounts and sources you follow.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}
