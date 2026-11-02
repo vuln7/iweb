@@ -44,6 +44,7 @@
 
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --figures: "Geist Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --fs-page: 28px;
   --fs-title: 20px;
   --fs-section: 16px;
   --fs-body: 14px;
@@ -227,7 +228,7 @@ svg { display: block; }
 .canvas { grid-column: 2; min-width: 0; padding: 26px var(--pad) 96px; }
 .title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .title-text { min-width: 0; }
-h1 { margin: 0; font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+h1 { margin: 0; font-size: var(--fs-page); font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; }
 .finding { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
 .finding b { color: #fff; font-weight: 500; }
 .stamp { flex: none; font-size: 12px; color: var(--faint); }
@@ -244,7 +245,47 @@ h1 { margin: 0; font-size: var(--fs-title); font-weight: 600; letter-spacing: -0
 .notice-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 
 /* ---------- the board ---------- */
-.grid { display: flex; gap: var(--gap); align-items: flex-start; outline: 0; }
+.grid { outline: 0; }
+.masonry { display: flex; gap: var(--gap); align-items: flex-start; }
+
+/* chapters: For you is read in portions, each with its own heading and a way to see the rest */
+.chapter + .chapter { margin-top: 48px; }
+.chapter-head { display: flex; align-items: baseline; gap: 12px; margin: 0 2px 14px; }
+.chapter-head h2 { margin: 0; font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.02em; line-height: 1.3; }
+.chapter-meta { font-size: 13px; color: var(--faint); }
+.chapter-more { display: flex; justify-content: center; margin-top: 16px; }
+.chapter-more:empty { display: none; }
+.card.said .why { display: none; }
+
+/* Top picks: a lead slide beside three lines, like the front page of a paper */
+.lead { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--gap); }
+.lead-main > .card { height: 100%; }
+.lead-main .media { aspect-ratio: 16 / 10 !important; } /* the lead crops to one calm shape whatever the picture's own */
+.lead-main .media.unsized img { height: 100%; max-height: none; }
+.lead-main .body { padding: 16px 20px 14px; }
+.lead-main .title { font-size: var(--fs-title); line-height: 1.3; letter-spacing: -0.02em; -webkit-line-clamp: 3; }
+.lead-rows { display: grid; grid-auto-rows: minmax(0, 1fr); gap: var(--gap); }
+.row {
+  position: relative; isolation: isolate; display: flex; gap: 4px; min-height: 0;
+  padding: 6px; border-radius: var(--radius-card); background: var(--surface);
+  transition: background-color 0.3s var(--ease-out);
+}
+@media (hover: hover) { .row:hover { background: var(--lit); } }
+.row.saved::after {
+  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  border-radius: inherit; box-shadow: inset 0 0 0 2px var(--accent);
+}
+.row-body { flex: 1; min-width: 0; align-self: center; display: grid; gap: 6px; padding: 8px 10px; }
+.row .title { margin: 0; -webkit-line-clamp: 3; }
+.row-thumb { flex: none; width: clamp(96px, 34%, 184px); min-height: 96px; overflow: hidden; border-radius: var(--radius-media); background: #1c1c1c; }
+.row-thumb img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.5s var(--ease-out), transform 0.9s var(--ease-out); }
+.row-thumb.loaded img { opacity: 1; }
+@media (hover: hover) { .row:hover .row-thumb.loaded img { transform: scale(1.06); } }
+@media (max-width: 1180px) {
+  .lead { grid-template-columns: minmax(0, 1fr); }
+  .lead-rows { grid-auto-rows: auto; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--gap); }
 
 .card {
@@ -746,5 +787,5 @@ input[type=range] { width: 100%; accent-color: #fff; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  .media img { opacity: 1; transform: none; }
+  .media img, .row-thumb img { opacity: 1; transform: none; }
 }

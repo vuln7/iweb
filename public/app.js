@@ -298,13 +298,52 @@ function setOnly(id) {
 }
 
 // ---------- the board: masonry by shortest column ----------
+// For you, unfiltered, reads in chapters: the top of the feed, one per interest or followed feed,
+// then everything else. Every other view is a single chapter with no heading.
 const grid = $('#grid');
 const cards = new Map(); // item id → element, kept across layouts so cards can glide to new places
-let cols = [];
+const opened = new Set(); // chapters the reader expanded; they stay open across relayouts
+let boards = []; // { id, title, reason, items, shown, paged, capped, top, cols, more }
+const TOP = 4;
 
 function colCount() {
   const w = grid.clientWidth;
   return w >= 1380 ? 5 : w >= 1060 ? 4 : w >= 700 ? 3 : 2;
+}
+
+const topicTitle = t => (t.length <= 2 ? t.toUpperCase() : t[0].toUpperCase() + t.slice(1));
+const feedTitle = reason => (reason === 'You’re subscribed' ? 'Your YouTube subscriptions' : reason.replace(/^From your /, 'Your '));
+
+function chapterize(list) {
+  if (state.tab !== 'all' || state.only || state.query.trim() || list.length <= TOP * 4) {
+    return [{ id: 'all', items: list, paged: true }];
+  }
+  const order = new Map(list.map((it, i) => [it.id, i]));
+  const groups = new Map();
+  const rest = [];
+  for (const it of list.slice(TOP)) {
+    const reason = it.why?.find(w => w.startsWith('Matches “')) || it.fromAccount;
+    if (!reason) { rest.push(it); continue; }
+    if (!groups.has(reason)) groups.set(reason, []);
+    groups.get(reason).push(it);
+  }
+  const chapters = [{ id: 'top', title: 'Top picks', items: list.slice(0, TOP), top: true }];
+  for (const [reason, items] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    if (items.length < 3) { rest.push(...items); continue; }
+    const topic = reason.startsWith('Matches “');
+    chapters.push({ id: reason, reason, items, capped: true, title: topic ? topicTitle(reason.slice(9, -1)) : feedTitle(reason) });
+  }
+  rest.sort((a, b) => order.get(a.id) - order.get(b.id));
+  if (rest.length) chapters.push({ id: 'rest', title: 'Everything else', items: rest, paged: true });
+  return chapters;
+}
+
+// Two rows of a chapter, unless the reader opened it or only a couple more would be left behind.
+function capOf(b, n) {
+  if (b.paged) return Math.min(state.shown, b.items.length);
+  if (!b.capped || opened.has(b.id)) return b.items.length;
+  const cap = Math.max(4, n * 2);
+  return b.items.length <= cap + 2 ? b.items.length : cap;
 }
 
 function cardFor(it) {
@@ -316,17 +355,88 @@ function cardFor(it) {
   return el;
 }
 
-function place(el) {
-  let best = cols[0];
-  for (const c of cols) if (c.offsetHeight < best.offsetHeight - 2) best = c;
+function place(b, el) {
+  let best = b.cols[0];
+  for (const c of b.cols) if (c.offsetHeight < best.offsetHeight - 2) best = c;
   best.append(el);
+}
+
+function fill(b, upto, animate) {
+  for (const it of b.items.slice(b.shown, upto)) {
+    const el = cardFor(it);
+    el.classList.toggle('said', !!b.reason && it.why?.[0] === b.reason); // the heading already says why
+    place(b, el);
+    if (animate) arrive(el);
+  }
+  b.shown = Math.max(b.shown, upto);
+  if (b.more) renderMore(b);
+}
+
+function chapterHead(b, i) {
+  const fresh = lastVisit ? b.items.filter(it => it.createdAt > lastVisit).length : 0;
+  return h('header', { class: 'chapter-head' },
+    h('h2', { id: `chapter-${i}` }, b.title),
+    !b.top && h('span', { class: 'chapter-meta' },
+      h('span', { class: 'num' }, b.items.length), b.items.length === 1 ? ' post' : ' posts',
+      fresh > 0 && [' · ', h('span', { class: 'num' }, fresh), ' new']));
+}
+
+// The top of the feed reads like a front page: one lead story with a picture, the rest as lines beside it.
+function lead(b) {
+  const first = b.items.find(it => it.media && isHttp(it.media.thumb)) || b.items[0];
+  const main = cardFor(first);
+  main.classList.remove('said');
+  b.shown = b.items.length;
+  return h('div', { class: 'lead' },
+    h('div', { class: 'lead-main' }, main),
+    h('div', { class: 'lead-rows' }, b.items.filter(it => it !== first).map(row)));
+}
+
+function row(it) {
+  const meta = metaOf(it);
+  const name = displayName(it, meta);
+  const pic = it.media && isHttp(it.media.thumb) && h('div', { class: 'row-thumb' }, h('img', {
+    src: it.media.thumb, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer',
+    onload: e => e.target.parentNode.classList.add('loaded'),
+    onerror: e => e.target.parentNode.remove(),
+  }));
+  return h('article', { class: `row${it.liked ? ' saved' : ''}`, style: `--src:${meta.color}`, 'data-id': it.id },
+    h('button', { type: 'button', class: 'hit', 'aria-label': `Open: ${it.title || clip(it.text) || name}`, onclick: () => openPlate(it) }),
+    h('div', { class: 'row-body' },
+      h('div', { class: 'who' },
+        avatar(it, meta),
+        h('span', { class: 'name' }, name),
+        h('span', { class: 'via' }, `· ${meta.label}`),
+        h('time', { datetime: new Date(it.createdAt).toISOString(), title: new Date(it.createdAt).toLocaleString() }, timeAgo(it.createdAt))),
+      h('h3', { class: 'title' }, it.title || clip(it.text, 160)),
+      it.why?.length > 0 && h('p', { class: 'why' }, it.why[0])),
+    pic);
+}
+
+function renderMore(b) {
+  const left = b.items.length - b.shown;
+  b.more.replaceChildren(!b.paged && left > 0 ? h('button', {
+    type: 'button',
+    class: 'pill small',
+    'aria-label': `Show ${left} more in ${b.title}`,
+    onclick: () => { opened.add(b.id); flip(() => fill(b, b.items.length)); },
+  }, `Show ${left} more`) : '');
 }
 
 function layout() {
   grid.style.minHeight = `${grid.offsetHeight}px`; // keep the page tall mid-rebuild so the scroll position holds
-  cols = Array.from({ length: colCount() }, () => h('div', { class: 'col' }));
-  grid.replaceChildren(...cols);
-  for (const it of state.list.slice(0, state.shown)) place(cardFor(it));
+  const n = colCount();
+  boards = chapterize(state.list);
+  grid.replaceChildren(...boards.map((b, i) => {
+    if (b.top) return h('section', { class: 'chapter is-top', 'aria-labelledby': `chapter-${i}` }, chapterHead(b, i), lead(b));
+    b.cols = Array.from({ length: n }, () => h('div', { class: 'col' }));
+    b.shown = 0;
+    const masonry = h('div', { class: 'masonry' }, ...b.cols);
+    if (!b.title) return h('section', { class: 'chapter', 'aria-labelledby': 'chapter-0' }, h('h2', { id: 'chapter-0', class: 'sr-only' }, 'Posts'), masonry);
+    b.more = h('div', { class: 'chapter-more' });
+    return h('section', { class: 'chapter', 'aria-labelledby': `chapter-${i}` }, chapterHead(b, i), masonry, b.more);
+  }));
+  for (const b of boards) if (!b.top) fill(b, capOf(b, n));
   grid.style.minHeight = '';
 }
 
@@ -346,7 +456,7 @@ function draw() {
   const reels = state.tab === 'watch';
   document.body.classList.toggle('reels-mode', reels);
   if (reels) {
-    cols = [];
+    boards = [];
     grid.replaceChildren();
     state.shown = state.list.length;
     renderReels();
@@ -355,7 +465,7 @@ function draw() {
   }
   stopReels();
   if (!state.list.length) {
-    cols = [];
+    boards = [];
     grid.replaceChildren(emptyState());
   } else {
     layout();
@@ -363,20 +473,19 @@ function draw() {
   renderEnd();
 }
 
+const pagedBoard = () => boards.find(b => b.paged);
+
 function appendPage() {
-  if (!cols.length || state.shown >= state.list.length) return;
-  const next = state.list.slice(state.shown, state.shown + PAGE);
-  state.shown += next.length;
-  for (const it of next) {
-    const el = cardFor(it);
-    place(el);
-    arrive(el);
-  }
+  const b = pagedBoard();
+  if (!b || b.shown >= b.items.length) return;
+  state.shown = Math.min(b.shown + PAGE, b.items.length);
+  fill(b, state.shown, true);
   renderEnd();
 }
 
 function renderEnd() {
-  const done = state.list.length && state.shown >= state.list.length;
+  const b = pagedBoard();
+  const done = b && b.shown >= b.items.length;
   $('#end').textContent = done ? (state.tab === 'saved' ? 'That’s everything you’ve saved.' : 'You’re caught up.') : '';
 }
 
@@ -384,16 +493,20 @@ new IntersectionObserver(entries => {
   if (entries[0].isIntersecting) appendPage();
 }, { rootMargin: '1400px' }).observe($('#sentinel'));
 
+let lastCols = 0;
 new ResizeObserver(() => {
-  if (cols.length && colCount() !== cols.length) flip(layout);
+  const n = colCount();
+  if (boards.length && n !== lastCols) flip(layout);
+  lastCols = n;
 }).observe(grid);
 
 function renderSkeleton() {
   const heights = [260, 180, 320, 220, 200, 300, 160, 240, 280, 190];
-  cols = Array.from({ length: colCount() }, () => h('div', { class: 'col' }));
+  boards = [];
+  const cols = Array.from({ length: colCount() }, () => h('div', { class: 'col' }));
   heights.forEach((ht, i) => cols[i % cols.length].append(h('div', { class: 'skel', 'aria-hidden': 'true' },
     h('div', { class: 'block', style: `height:${ht}px` }), h('div', { class: 'line' }), h('div', { class: 'line short' }))));
-  grid.replaceChildren(...cols);
+  grid.replaceChildren(h('div', { class: 'masonry' }, ...cols));
 }
 
 function emptyState() {
@@ -548,7 +661,7 @@ function card(it) {
       h('span', { class: 'name' }, name),
       h('span', { class: 'via' }, `· ${meta.label}`),
       h('time', { datetime: new Date(it.createdAt).toISOString(), title: new Date(it.createdAt).toLocaleString() }, timeAgo(it.createdAt))),
-    it.title && h('h2', { class: 'title' }, it.title),
+    it.title && h('h3', { class: 'title' }, it.title),
     kind === 'headline' && it.domain && it.source !== 'hackernews' && h('span', { class: 'domain' }, it.domain),
     // On a picture card the picture is the content: a title wins over its excerpt.
     it.text && !(kind === 'media' && it.title) && h('p', { class: 'text' }, it.text),
@@ -570,6 +683,7 @@ function toggleSave(it) {
   // The feed's copy of this post and the Saved list's copy are separate objects; keep both in step.
   for (const other of [...(state.feed?.items || []), ...state.saved]) if (other.id === it.id) other.liked = it.liked;
   cards.get(it.id)?.classList.toggle('saved', it.liked);
+  for (const r of grid.querySelectorAll(`.row[data-id="${CSS.escape(it.id)}"]`)) r.classList.toggle('saved', it.liked);
   reelItems.get(it.id)?.el.classList.toggle('saved', it.liked);
   send(it, it.liked ? 'like' : 'unlike');
   toast(it.liked ? 'Saved. You’ll see more like this.' : 'Removed from Saved.');
@@ -861,11 +975,11 @@ function transition(fn) {
 }
 
 function slideEl(it) {
-  const el = cards.get(it?.id);
-  if (!el?.isConnected) return null;
+  const el = [cards.get(it?.id), grid.querySelector(`.row[data-id="${CSS.escape(it?.id || '')}"]`)].find(e => e?.isConnected);
+  if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.bottom < 0 || r.top > innerHeight) return null;
-  return el.querySelector('.media') || el;
+  return el.querySelector('.media, .row-thumb') || el;
 }
 
 function openPlate(it) {
